@@ -17,9 +17,10 @@ try:
     from PIL import Image
     from flup.server.fcgi import WSGIServer
 except ImportError as e:
-    print(f"Error: Missing required library. Please install dependencies: {e}", file=sys.stderr)
-    print("Run: pip install -r requirements.txt", file=sys.stderr)
-    sys.exit(1)
+    raise ImportError(
+        f"Missing required library for Simple Album. Please install dependencies: {e}. "
+        "Run: pip install -r requirements.txt"
+    ) from e
 
 
 class ImageServer:
@@ -55,10 +56,18 @@ class ImageServer:
         """
         try:
             resolved = (self.image_root / requested_path).resolve()
-            # Check if resolved path is within image_root (Python 3.6+ compatible)
-            return str(resolved).startswith(str(self.image_root))
         except (ValueError, RuntimeError):
             return False
+
+        # Safely ensure the resolved path is within image_root
+        # Use Path.is_relative_to when available (Python 3.9+)
+        if hasattr(resolved, "is_relative_to"):
+            return resolved.is_relative_to(self.image_root)
+
+        # Fallback for Python 3.6–3.8: use an os.path.sep-aware prefix check
+        resolved_str = str(resolved)
+        root_str = str(self.image_root)
+        return resolved_str == root_str or resolved_str.startswith(root_str + os.path.sep)
     
     def _get_cache_path(self, image_path, width, height, quality):
         """
@@ -75,7 +84,7 @@ class ImageServer:
         """
         # Create a hash of the parameters for the cache filename
         # Using SHA-256 for better security practices
-        cache_key = f"{image_path}_{width}_{height}_{quality}".encode('utf-8')
+        cache_key = f"{str(image_path.resolve())}_{width}_{height}_{quality}".encode('utf-8')
         cache_hash = hashlib.sha256(cache_key).hexdigest()[:32]  # Use first 32 chars
         
         # Preserve the file extension
@@ -134,14 +143,25 @@ class ImageServer:
             # Determine if this is a JPEG based on file extension
             is_jpeg = image_path.suffix.lower() in {'.jpg', '.jpeg'}
             
-            # Convert RGBA to RGB for JPEG
-            if img.mode == 'RGBA' and is_jpeg:
-                rgb_img = Image.new('RGB', img.size, (255, 255, 255))
-                rgb_img.paste(img, mask=img.split()[3])
-                rgb_img.save(output, format='JPEG', quality=quality)
-            elif is_jpeg:
+            if is_jpeg:
+                # Ensure image is in a JPEG-compatible mode
+                if img.mode in ('RGBA', 'LA', 'PA'):
+                    # Convert to RGBA (if needed) then composite onto white background
+                    if img.mode != 'RGBA':
+                        img = img.convert('RGBA')
+                    background = Image.new('RGB', img.size, (255, 255, 255))
+                    # Use alpha channel as mask (index 3 after RGBA conversion)
+                    background.paste(img, mask=img.split()[3])
+                    img_to_save = background
+                elif img.mode not in ('RGB', 'L'):
+                    # Convert unsupported modes (e.g., P, CMYK, etc.) to RGB
+                    img_to_save = img.convert('RGB')
+                else:
+                    # Already JPEG-compatible (RGB or L)
+                    img_to_save = img
+                
                 # JPEG format - apply quality
-                img.save(output, format='JPEG', quality=quality)
+                img_to_save.save(output, format='JPEG', quality=quality)
             else:
                 # Other formats - don't use quality parameter
                 # Determine format from original image or use PNG as default
@@ -295,7 +315,7 @@ def application(environ, start_response):
     if status_code == 200:
         response_headers.extend([
             ('Cache-Control', 'public, max-age=31536000'),  # 1 year
-            ('Vary', 'Accept-Encoding'),
+
         ])
     
     start_response(status, response_headers)

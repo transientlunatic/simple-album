@@ -11,4 +11,4 @@ RewriteCond %{REQUEST_FILENAME} !-d
 
 # Route all image requests to the FastCGI application
 # Preserves the path and query string
-RewriteRule ^(.*)$ /dispatch.fcgi/$1 [QSA,L]
+RewriteRule ^(.*)$ dispatch.fcgi/$1 [QSA,L]

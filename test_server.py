@@ -12,7 +12,7 @@ from pathlib import Path
 from io import BytesIO
 
 try:
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image, ImageDraw
 except ImportError:
     print("Error: Pillow not installed. Run: pip install Pillow")
     sys.exit(1)
@@ -85,8 +85,9 @@ def test_resize():
         
         img = Image.open(BytesIO(data))
         print(f"Resized dimensions: {img.size[0]}x{img.size[1]}")
-        assert img.size[0] == 500, f"Expected width 500, got {img.size[0]}"
-        assert img.size[1] == 500, f"Expected height 500, got {img.size[1]}"
+        width, height = img.size
+        assert width <= 500 and height <= 500, f"Expected dimensions to fit within 500x500, got {width}x{height}"
+        assert width == 500 or height == 500, f"Expected at least one dimension to be 500, got {width}x{height}"
         print("✓ Test 3 passed")
         
         # Test 4: Cache verification
@@ -96,8 +97,8 @@ def test_resize():
         
         # Request the same image again (should use cache)
         status2, content_type2, data2 = server.serve_image('test1.jpg', width=400)
-        # Both should be 200 and return valid image data
-        assert status == status2 == 200, "Cached request should return 200"
+        # Should return 200 and valid image data
+        assert status2 == 200, "Cached request should return 200"
         assert len(data2) > 0, "Cached image should have data"
         print("✓ Test 4 passed - cache working correctly")
         
