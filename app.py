@@ -101,7 +101,11 @@ class ImageServer:
             # If no dimensions specified, return original
             if width is None and height is None:
                 output = BytesIO()
-                img.save(output, format=img.format or 'JPEG', quality=quality)
+                # Only apply quality to JPEG images
+                if img.format in ('JPEG', 'JPG'):
+                    img.save(output, format=img.format, quality=quality)
+                else:
+                    img.save(output, format=img.format or 'PNG')
                 output.seek(0)
                 return output
             
@@ -128,8 +132,12 @@ class ImageServer:
                 rgb_img = Image.new('RGB', img.size, (255, 255, 255))
                 rgb_img.paste(img, mask=img.split()[3])
                 rgb_img.save(output, format='JPEG', quality=quality)
+            elif img.format in ('JPEG', 'JPG') or image_path.suffix.lower() in {'.jpg', '.jpeg'}:
+                # JPEG format - apply quality
+                img.save(output, format='JPEG', quality=quality)
             else:
-                img.save(output, format=img.format or 'JPEG', quality=quality)
+                # Other formats - don't use quality parameter
+                img.save(output, format=img.format or 'PNG')
             
             output.seek(0)
             return output
@@ -259,7 +267,14 @@ def application(environ, start_response):
     status_code, content_type, data = server.serve_image(path, width, height, quality)
     
     # Set response status
-    status = f'{status_code} {["OK", "Not Found", "Forbidden", "Bad Request", "Internal Server Error"][status_code // 100 - 2] if status_code in [200, 404, 403, 400, 500] else "Error"}'
+    status_messages = {
+        200: 'OK',
+        400: 'Bad Request',
+        403: 'Forbidden',
+        404: 'Not Found',
+        500: 'Internal Server Error'
+    }
+    status = f'{status_code} {status_messages.get(status_code, "Error")}'
     
     # Set response headers
     response_headers = [
