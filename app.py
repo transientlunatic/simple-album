@@ -55,7 +55,8 @@ class ImageServer:
         """
         try:
             resolved = (self.image_root / requested_path).resolve()
-            return resolved.is_relative_to(self.image_root)
+            # Check if resolved path is within image_root (Python 3.6+ compatible)
+            return str(resolved).startswith(str(self.image_root))
         except (ValueError, RuntimeError):
             return False
     
@@ -73,8 +74,9 @@ class ImageServer:
             Path: Cache file path
         """
         # Create a hash of the parameters for the cache filename
+        # Using SHA-256 for better security practices
         cache_key = f"{image_path}_{width}_{height}_{quality}".encode('utf-8')
-        cache_hash = hashlib.md5(cache_key).hexdigest()
+        cache_hash = hashlib.sha256(cache_key).hexdigest()[:32]  # Use first 32 chars
         
         # Preserve the file extension
         ext = image_path.suffix.lower()
