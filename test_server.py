@@ -135,5 +135,100 @@ def test_resize():
         print(f"Cleaned up temporary directory: {temp_dir}")
 
 
+def test_upload():
+    """Test the image upload functionality."""
+    print("\n=== Testing Upload Functionality ===\n")
+    
+    # Create temporary directories
+    temp_dir = Path(tempfile.mkdtemp(prefix='simple-album-upload-test-'))
+    image_dir = temp_dir / 'images'
+    cache_dir = temp_dir / 'cache'
+    
+    try:
+        # Create a test API key
+        test_api_key = "test_api_key_12345"
+        
+        # Initialize server with upload enabled
+        server = ImageServer(
+            str(image_dir), 
+            str(cache_dir),
+            upload_enabled=True,
+            upload_api_key=test_api_key
+        )
+        
+        # Create a test image in memory
+        img = Image.new('RGB', (800, 600), color='red')
+        img_bytes = BytesIO()
+        img.save(img_bytes, format='JPEG')
+        img_data = img_bytes.getvalue()
+        
+        # Test 1: Upload with correct API key
+        print("Test 1: Upload with correct API key")
+        status, content_type, response = server.upload_image('test/upload1.jpg', img_data, test_api_key)
+        print(f"Status: {status}, Content-Type: {content_type}")
+        assert status == 201, f"Expected 201, got {status}"
+        
+        # Verify the file was created
+        uploaded_path = image_dir / 'test' / 'upload1.jpg'
+        assert uploaded_path.exists(), "Uploaded file should exist"
+        print("✓ Test 1 passed - image uploaded successfully")
+        
+        # Test 2: Upload with incorrect API key
+        print("\nTest 2: Upload with incorrect API key")
+        status, content_type, response = server.upload_image('test/upload2.jpg', img_data, 'wrong_key')
+        print(f"Status: {status}")
+        assert status == 401, f"Expected 401 Unauthorized, got {status}"
+        print("✓ Test 2 passed - incorrect API key rejected")
+        
+        # Test 3: Upload without API key
+        print("\nTest 3: Upload without API key")
+        status, content_type, response = server.upload_image('test/upload3.jpg', img_data, None)
+        print(f"Status: {status}")
+        assert status == 401, f"Expected 401 Unauthorized, got {status}"
+        print("✓ Test 3 passed - missing API key rejected")
+        
+        # Test 4: Upload with disabled uploads
+        print("\nTest 4: Upload with disabled uploads")
+        server_disabled = ImageServer(
+            str(image_dir), 
+            str(cache_dir),
+            upload_enabled=False,
+            upload_api_key=test_api_key
+        )
+        status, content_type, response = server_disabled.upload_image('test/upload4.jpg', img_data, test_api_key)
+        print(f"Status: {status}")
+        assert status == 403, f"Expected 403 Forbidden, got {status}"
+        print("✓ Test 4 passed - uploads disabled rejected")
+        
+        # Test 5: Upload invalid file type
+        print("\nTest 5: Upload invalid file type")
+        status, content_type, response = server.upload_image('test/upload.txt', img_data, test_api_key)
+        print(f"Status: {status}")
+        assert status == 400, f"Expected 400 Bad Request, got {status}"
+        print("✓ Test 5 passed - invalid file type rejected")
+        
+        # Test 6: Upload with path traversal attempt
+        print("\nTest 6: Upload with path traversal attempt")
+        status, content_type, response = server.upload_image('../etc/passwd.jpg', img_data, test_api_key)
+        print(f"Status: {status}")
+        assert status == 403, f"Expected 403 Forbidden, got {status}"
+        print("✓ Test 6 passed - path traversal blocked")
+        
+        # Test 7: Upload invalid image data
+        print("\nTest 7: Upload invalid image data")
+        status, content_type, response = server.upload_image('test/invalid.jpg', b'not an image', test_api_key)
+        print(f"Status: {status}")
+        assert status == 400, f"Expected 400 Bad Request, got {status}"
+        print("✓ Test 7 passed - invalid image data rejected")
+        
+        print("\n=== All upload tests passed! ===\n")
+        
+    finally:
+        # Cleanup
+        shutil.rmtree(temp_dir)
+        print(f"Cleaned up temporary directory: {temp_dir}")
+
+
 if __name__ == '__main__':
     test_resize()
+    test_upload()

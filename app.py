@@ -10,9 +10,11 @@ import sys
 import hashlib
 import mimetypes
 import configparser
+import secrets
 from pathlib import Path
 from urllib.parse import parse_qs, unquote
 from io import BytesIO
+import json
 
 try:
     from PIL import Image
@@ -28,7 +30,8 @@ class ImageServer:
     """Handles image serving with resizing and caching."""
     
     def __init__(self, image_root, cache_root, max_width=4000, max_height=4000, 
-                 default_quality=85, max_file_size_mb=50):
+                 default_quality=85, max_file_size_mb=50, upload_api_key=None,
+                 upload_enabled=False):
         """
         Initialize the image server.
         
@@ -39,6 +42,8 @@ class ImageServer:
             max_height: Maximum allowed height in pixels
             default_quality: Default JPEG quality (1-100)
             max_file_size_mb: Maximum file size in MB to serve (prevents memory issues)
+            upload_api_key: API key for upload authentication (None to disable uploads)
+            upload_enabled: Whether to enable upload functionality
         """
         self.image_root = Path(image_root).resolve()
         self.cache_root = Path(cache_root).resolve()
@@ -46,9 +51,14 @@ class ImageServer:
         self.max_height = max_height
         self.default_quality = default_quality
         self.max_file_size_bytes = max_file_size_mb * 1024 * 1024
+        self.upload_api_key = upload_api_key
+        self.upload_enabled = upload_enabled
         
         # Create cache directory if it doesn't exist
         self.cache_root.mkdir(parents=True, exist_ok=True)
+        
+        # Create image root directory if it doesn't exist (for uploads)
+        self.image_root.mkdir(parents=True, exist_ok=True)
         
         # Supported image formats
         self.supported_formats = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
@@ -275,6 +285,79 @@ class ImageServer:
         except Exception:
             # Don't expose internal error details to users
             return (500, 'text/plain', b'Internal Server Error: Unable to process image')
+    
+    def upload_image(self, path, image_data, api_key=None):
+        """
+        Upload an image to the server.
+        
+        Args:
+            path: Destination path for the image (relative to image_root)
+            image_data: Binary image data
+            api_key: API key for authentication
+            
+        Returns:
+            tuple: (status, content_type, response_data)
+        """
+        # Check if uploads are enabled
+        if not self.upload_enabled:
+            return (403, 'application/json', json.dumps({
+                'error': 'Upload functionality is disabled'
+            }).encode('utf-8'))
+        
+        # Verify API key using constant-time comparison to prevent timing attacks
+        if not self.upload_api_key or not secrets.compare_digest(api_key or '', self.upload_api_key):
+            return (401, 'application/json', json.dumps({
+                'error': 'Unauthorized: Invalid or missing API key'
+            }).encode('utf-8'))
+        
+        # Decode and normalize path
+        path = unquote(path).lstrip('/')
+        
+        # Security check
+        if not self._is_safe_path(path):
+            return (403, 'application/json', json.dumps({
+                'error': 'Forbidden: Invalid path'
+            }).encode('utf-8'))
+        
+        # Check file extension
+        target_path = self.image_root / path
+        if target_path.suffix.lower() not in self.supported_formats:
+            return (400, 'application/json', json.dumps({
+                'error': 'Bad Request: Unsupported file type'
+            }).encode('utf-8'))
+        
+        # Check file size
+        if len(image_data) > self.max_file_size_bytes:
+            return (413, 'application/json', json.dumps({
+                'error': 'Request Entity Too Large: Image file too large'
+            }).encode('utf-8'))
+        
+        # Validate it's actually an image
+        try:
+            img = Image.open(BytesIO(image_data))
+            img.verify()  # Verify it's a valid image
+        except (Image.UnidentifiedImageError, IOError, ValueError):
+            return (400, 'application/json', json.dumps({
+                'error': 'Bad Request: Invalid image file'
+            }).encode('utf-8'))
+        
+        # Create parent directory if it doesn't exist
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Save the image
+        try:
+            with open(target_path, 'wb') as f:
+                f.write(image_data)
+            
+            return (201, 'application/json', json.dumps({
+                'success': True,
+                'message': 'Image uploaded successfully',
+                'path': path
+            }).encode('utf-8'))
+        except IOError:
+            return (500, 'application/json', json.dumps({
+                'error': 'Internal Server Error: Unable to save image'
+            }).encode('utf-8'))
 
 
 def load_config():
@@ -293,6 +376,8 @@ def load_config():
         'max_height': 4000,
         'max_file_size_mb': 50,
         'cache_max_age': 604800,  # 1 week in seconds
+        'upload_enabled': False,
+        'upload_api_key': None,
     }
     
     # Try to load from config.ini file
@@ -321,6 +406,13 @@ def load_config():
             if parser.has_section('cache'):
                 if parser.has_option('cache', 'max_age'):
                     config['cache_max_age'] = parser.getint('cache', 'max_age')
+            
+            if parser.has_section('upload'):
+                if parser.has_option('upload', 'enabled'):
+                    config['upload_enabled'] = parser.getboolean('upload', 'enabled')
+                if parser.has_option('upload', 'api_key'):
+                    api_key = parser.get('upload', 'api_key').strip()
+                    config['upload_api_key'] = api_key if api_key else None
         except (configparser.Error, ValueError):
             # If config file is malformed, just use defaults
             pass
@@ -355,6 +447,11 @@ def load_config():
             config['cache_max_age'] = int(os.environ['CACHE_MAX_AGE'])
         except ValueError:
             pass
+    if 'UPLOAD_ENABLED' in os.environ:
+        config['upload_enabled'] = os.environ['UPLOAD_ENABLED'].lower() in ('true', '1', 'yes')
+    if 'UPLOAD_API_KEY' in os.environ:
+        api_key = os.environ['UPLOAD_API_KEY'].strip()
+        config['upload_api_key'] = api_key if api_key else None
     
     return config
 
@@ -373,7 +470,9 @@ def get_server():
             max_width=_config['max_width'],
             max_height=_config['max_height'],
             default_quality=_config['default_quality'],
-            max_file_size_mb=_config['max_file_size_mb']
+            max_file_size_mb=_config['max_file_size_mb'],
+            upload_api_key=_config['upload_api_key'],
+            upload_enabled=_config['upload_enabled']
         )
     return _server, _config
 
@@ -397,9 +496,68 @@ def application(environ, start_response):
     # Get the server instance (initialized lazily on first request)
     server, config = get_server()
     
+    # Get request method
+    request_method = environ.get('REQUEST_METHOD', 'GET')
+    
     # Get request path
     path = environ.get('PATH_INFO', '/')
     
+    # Handle POST requests for uploads
+    if request_method == 'POST':
+        # Parse query parameters for API key
+        query_string = environ.get('QUERY_STRING', '')
+        params = parse_qs(query_string)
+        
+        # Get API key from query parameter or Authorization header
+        api_key = None
+        if 'api_key' in params:
+            api_key = params['api_key'][0]
+        elif 'HTTP_AUTHORIZATION' in environ:
+            auth_header = environ['HTTP_AUTHORIZATION']
+            if auth_header.startswith('Bearer '):
+                api_key = auth_header[7:]  # Remove 'Bearer ' prefix
+        
+        # Read uploaded image data
+        try:
+            content_length = int(environ.get('CONTENT_LENGTH', 0))
+        except ValueError:
+            content_length = 0
+        
+        if content_length == 0:
+            status = '400 Bad Request'
+            response_headers = [('Content-Type', 'application/json')]
+            error_data = json.dumps({'error': 'No image data provided'}).encode('utf-8')
+            response_headers.append(('Content-Length', str(len(error_data))))
+            start_response(status, response_headers)
+            return [error_data]
+        
+        # Read the image data
+        image_data = environ['wsgi.input'].read(content_length)
+        
+        # Upload the image
+        status_code, content_type, data = server.upload_image(path, image_data, api_key)
+        
+        # Set response status
+        status_messages = {
+            201: 'Created',
+            400: 'Bad Request',
+            401: 'Unauthorized',
+            403: 'Forbidden',
+            413: 'Request Entity Too Large',
+            500: 'Internal Server Error'
+        }
+        status = '{0} {1}'.format(status_code, status_messages.get(status_code, 'Error'))
+        
+        # Set response headers
+        response_headers = [
+            ('Content-Type', content_type),
+            ('Content-Length', str(len(data))),
+        ]
+        
+        start_response(status, response_headers)
+        return [data]
+    
+    # Handle GET requests (existing functionality)
     # Parse query parameters
     query_string = environ.get('QUERY_STRING', '')
     params = parse_qs(query_string)

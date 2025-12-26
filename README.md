@@ -1,6 +1,6 @@
 # simple-album
 
-A lightweight FastCGI-based image server for serving resized images to static site generators like Hugo, Jekyll, or Gatsby. Designed to run on DreamHost shared hosting environments and keep image files out of git repositories.
+A lightweight FastCGI-based image server for serving resized images to static site generators like Hugo, Jekyll, or Gatsby. Includes an Adobe Lightroom plugin for direct image uploads. Designed to run on DreamHost shared hosting environments and keep image files out of git repositories.
 
 ## Features
 
@@ -10,6 +10,8 @@ A lightweight FastCGI-based image server for serving resized images to static si
 - **Secure**: Path traversal protection prevents unauthorized file access
 - **Multiple formats**: Supports JPG, PNG, GIF, WebP, and BMP
 - **Hugo/Jekyll friendly**: Images are accessible via predictable URLs for static site generators
+- **Adobe Lightroom plugin**: Upload images directly from Lightroom to your server
+- **Upload API**: Secure API for uploading images with API key authentication
 
 ## Requirements
 
@@ -125,6 +127,10 @@ max_file_size_mb = 50
 
 [cache]
 max_age = 604800  # 1 week in seconds
+
+[upload]
+enabled = false  # Set to true to enable upload functionality
+api_key =  # Generate with: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
 ### Environment Variables
@@ -138,6 +144,8 @@ Alternatively, set these environment variables:
 - `MAX_HEIGHT`: Maximum allowed height (default: 4000)
 - `MAX_FILE_SIZE_MB`: Maximum file size in MB (default: 50)
 - `CACHE_MAX_AGE`: Cache duration in seconds (default: 604800 = 1 week)
+- `UPLOAD_ENABLED`: Enable upload functionality (true/false, default: false)
+- `UPLOAD_API_KEY`: API key for upload authentication
 
 ## Usage
 
@@ -182,16 +190,117 @@ https://yourdomain.com/photos/vacation.jpg?w=800&q=90
 https://yourdomain.com/photos/vacation.jpg
 ```
 
+## Upload API
+
+The server provides an API for uploading images, which is used by the Adobe Lightroom plugin but can also be used programmatically.
+
+### Enabling Uploads
+
+Configure uploads in `config.ini`:
+
+```ini
+[upload]
+enabled = true
+api_key = YOUR_SECURE_API_KEY_HERE
+```
+
+Generate a secure API key:
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+### Upload Endpoint
+
+**POST** `/<path>`
+
+- **Path**: Destination path for the image (e.g., `/photos/myimage.jpg`)
+- **Body**: Raw image data (binary)
+- **Authentication**: Use one of these methods:
+  - **Recommended**: `Authorization: Bearer <api_key>` header
+  - Alternative: Query parameter `?api_key=<api_key>` (may be logged by web servers)
+
+**Example using curl (with Authorization header):**
+```bash
+curl -X POST \
+  "https://images.yourdomain.com/photos/newimage.jpg" \
+  --data-binary @/path/to/local/image.jpg \
+  -H "Content-Type: image/jpeg" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+**Example using curl (with query parameter):**
+```bash
+curl -X POST \
+  "https://images.yourdomain.com/photos/newimage.jpg?api_key=YOUR_API_KEY" \
+  --data-binary @/path/to/local/image.jpg \
+  -H "Content-Type: image/jpeg"
+```
+
+**Response (Success - 201 Created):**
+```json
+{
+  "success": true,
+  "message": "Image uploaded successfully",
+  "path": "photos/newimage.jpg"
+}
+```
+
+**Response (Error):**
+```json
+{
+  "error": "Error description"
+}
+```
+
+## Adobe Lightroom Plugin
+
+The Simple Album Upload plugin allows you to export images directly from Adobe Lightroom to your server.
+
+### Installation
+
+1. Locate the `SimpleAlbumUpload.lrplugin` folder in this repository
+2. In Adobe Lightroom, go to `File > Plug-in Manager...`
+3. Click `Add` and select the `SimpleAlbumUpload.lrplugin` folder
+4. Click `Done`
+
+For detailed instructions, see [SimpleAlbumUpload.lrplugin/README.md](SimpleAlbumUpload.lrplugin/README.md)
+
+### Usage
+
+1. **Configure your server** with upload enabled and an API key (see Upload API section above)
+2. In Lightroom, select photos to export
+3. Go to `File > Export...`
+4. Select `Simple Album Server` as the export destination
+5. Enter your settings:
+   - **Server URL**: Your Simple Album server URL (e.g., `https://images.yourdomain.com`)
+   - **API Key**: The API key from your server configuration
+   - **Upload Path**: Destination folder on server (e.g., `lightroom/`)
+6. Configure image format, quality, and sizing as desired
+7. Click `Export`
+
+### Plugin Features
+
+- Direct upload from Lightroom to Simple Album server
+- Secure API key authentication
+- Customizable upload paths
+- Support for JPEG and PNG formats
+- Progress tracking during upload
+- Error handling and reporting
+
 ## Directory Structure
 
 ```
 simple-album/
-├── app.py              # Main application logic
-├── dispatch.fcgi       # FastCGI dispatcher for DreamHost
-├── .htaccess           # Apache configuration
-├── requirements.txt    # Python dependencies
-├── config.ini.example  # Example configuration
-└── cache/             # Resized images cache (auto-created)
+├── app.py                          # Main application logic
+├── dispatch.fcgi                   # FastCGI dispatcher for DreamHost
+├── .htaccess                       # Apache configuration
+├── requirements.txt                # Python dependencies
+├── config.ini.example              # Example configuration
+├── cache/                          # Resized images cache (auto-created)
+└── SimpleAlbumUpload.lrplugin/     # Adobe Lightroom export plugin
+    ├── Info.lua                    # Plugin metadata
+    ├── ExportServiceProvider.lua   # Export service implementation
+    └── README.md                   # Plugin documentation
 
 ~/images/              # Your original images (configured in dispatch.fcgi)
 ├── photos/
@@ -231,6 +340,9 @@ Usage in content:
 - **File type validation**: Only image files with supported extensions are served
 - **Dimension limits**: Width and height are capped at 4000 pixels to prevent resource abuse
 - **Quality limits**: JPEG quality is limited to the range 1-100
+- **Upload authentication**: Uploads require a valid API key for authentication
+- **Image validation**: Uploaded files are validated to ensure they are legitimate images
+- **HTTPS recommended**: For production use, always use HTTPS to encrypt API keys in transit
 
 ## Performance
 
