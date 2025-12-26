@@ -191,7 +191,7 @@ function exportServiceProvider.processRenderedPhotos( functionContext, exportCon
                     end
                     
                     -- Upload the file with API key in Authorization header
-                    local result, hdrs = LrHttp.post( uploadUrl, fileContent, {
+                    local result = LrHttp.post( uploadUrl, fileContent, {
                         { field = "Content-Type", value = contentType },
                         { field = "Authorization", value = "Bearer " .. apiKey },
                     })

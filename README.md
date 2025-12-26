@@ -343,8 +343,6 @@ Usage in content:
 - **Upload authentication**: Uploads require a valid API key for authentication
 - **Image validation**: Uploaded files are validated to ensure they are legitimate images
 - **HTTPS recommended**: For production use, always use HTTPS to encrypt API keys in transit
-- **Dimension limits**: Width and height are capped at 4000 pixels to prevent resource abuse
-- **Quality limits**: JPEG quality is limited to the range 1-100
 
 ## Performance
 

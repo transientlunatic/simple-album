@@ -304,8 +304,8 @@ class ImageServer:
                 'error': 'Upload functionality is disabled'
             }).encode('utf-8'))
         
-        # Verify API key
-        if not self.upload_api_key or api_key != self.upload_api_key:
+        # Verify API key using constant-time comparison to prevent timing attacks
+        if not self.upload_api_key or not secrets.compare_digest(api_key or '', self.upload_api_key):
             return (401, 'application/json', json.dumps({
                 'error': 'Unauthorized: Invalid or missing API key'
             }).encode('utf-8'))
@@ -336,7 +336,7 @@ class ImageServer:
         try:
             img = Image.open(BytesIO(image_data))
             img.verify()  # Verify it's a valid image
-        except (Image.UnidentifiedImageError, IOError, ValueError) as e:
+        except (Image.UnidentifiedImageError, IOError, ValueError):
             return (400, 'application/json', json.dumps({
                 'error': 'Bad Request: Invalid image file'
             }).encode('utf-8'))
@@ -354,7 +354,7 @@ class ImageServer:
                 'message': 'Image uploaded successfully',
                 'path': path
             }).encode('utf-8'))
-        except IOError as e:
+        except IOError:
             return (500, 'application/json', json.dumps({
                 'error': 'Internal Server Error: Unable to save image'
             }).encode('utf-8'))
@@ -411,7 +411,8 @@ def load_config():
                 if parser.has_option('upload', 'enabled'):
                     config['upload_enabled'] = parser.getboolean('upload', 'enabled')
                 if parser.has_option('upload', 'api_key'):
-                    config['upload_api_key'] = parser.get('upload', 'api_key')
+                    api_key = parser.get('upload', 'api_key').strip()
+                    config['upload_api_key'] = api_key if api_key else None
         except (configparser.Error, ValueError):
             # If config file is malformed, just use defaults
             pass
@@ -449,7 +450,8 @@ def load_config():
     if 'UPLOAD_ENABLED' in os.environ:
         config['upload_enabled'] = os.environ['UPLOAD_ENABLED'].lower() in ('true', '1', 'yes')
     if 'UPLOAD_API_KEY' in os.environ:
-        config['upload_api_key'] = os.environ['UPLOAD_API_KEY']
+        api_key = os.environ['UPLOAD_API_KEY'].strip()
+        config['upload_api_key'] = api_key if api_key else None
     
     return config
 
