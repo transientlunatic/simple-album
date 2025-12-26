@@ -43,11 +43,21 @@ A lightweight FastCGI-based image server for serving resized images to static si
    ```
 
 5. **Configure your image directories**:
+   
+   **Option A: Using config.ini file (recommended)**
+   ```bash
+   cp config.ini.example config.ini
+   nano config.ini  # Edit paths to match your setup
+   ```
+   
+   **Option B: Using dispatch.fcgi**
    Edit `dispatch.fcgi` and update these lines:
    ```python
    os.environ['IMAGE_ROOT'] = '/home/username/images'  # Your original images
    os.environ['CACHE_ROOT'] = '/home/username/simple-album/cache'  # Cache directory
    ```
+   
+   Note: Environment variables in `dispatch.fcgi` override settings in `config.ini`.
 
 6. **Make the dispatcher executable**:
    ```bash
@@ -75,7 +85,15 @@ A lightweight FastCGI-based image server for serving resized images to static si
    pip install -r requirements.txt
    ```
 
-3. **Set environment variables**:
+3. **Configure the application**:
+   
+   **Option A: Using config.ini file (recommended)**
+   ```bash
+   cp config.ini.example config.ini
+   nano config.ini  # Edit paths and settings
+   ```
+   
+   **Option B: Using environment variables**
    ```bash
    export IMAGE_ROOT=/path/to/your/images
    export CACHE_ROOT=/path/to/cache
@@ -85,6 +103,41 @@ A lightweight FastCGI-based image server for serving resized images to static si
    ```bash
    python app.py
    ```
+
+## Configuration
+
+The application can be configured using either a `config.ini` file or environment variables. Environment variables take precedence over the config file.
+
+### Config File (config.ini)
+
+Copy `config.ini.example` to `config.ini` and adjust the settings:
+
+```ini
+[server]
+image_root = /home/username/images
+cache_root = /home/username/simple-album/cache
+
+[resize]
+default_quality = 85
+max_width = 4000
+max_height = 4000
+max_file_size_mb = 50
+
+[cache]
+max_age = 604800  # 1 week in seconds
+```
+
+### Environment Variables
+
+Alternatively, set these environment variables:
+
+- `IMAGE_ROOT`: Directory containing original images
+- `CACHE_ROOT`: Directory for cached resized images
+- `DEFAULT_QUALITY`: Default JPEG quality (1-100, default: 85)
+- `MAX_WIDTH`: Maximum allowed width (default: 4000)
+- `MAX_HEIGHT`: Maximum allowed height (default: 4000)
+- `MAX_FILE_SIZE_MB`: Maximum file size in MB (default: 50)
+- `CACHE_MAX_AGE`: Cache duration in seconds (default: 604800 = 1 week)
 
 ## Usage
 

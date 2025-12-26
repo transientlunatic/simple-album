@@ -12,3 +12,10 @@ default_quality = 85
 # Maximum allowed dimensions (prevents abuse)
 max_width = 4000
 max_height = 4000
+
+# Maximum file size in MB (prevents memory issues)
+max_file_size_mb = 50
+
+[cache]
+# Cache duration in seconds (default: 604800 = 1 week)
+max_age = 604800

@@ -9,6 +9,7 @@ import os
 import sys
 import hashlib
 import mimetypes
+import configparser
 from pathlib import Path
 from urllib.parse import parse_qs, unquote
 from io import BytesIO
@@ -18,24 +19,33 @@ try:
     from flup.server.fcgi import WSGIServer
 except ImportError as e:
     raise ImportError(
-        f"Missing required library for Simple Album. Please install dependencies: {e}. "
-        "Run: pip install -r requirements.txt"
+        "Missing required library for Simple Album. Please install dependencies with "
+        "'pip install -r requirements.txt'. Original error: {0}".format(e)
     ) from e
 
 
 class ImageServer:
     """Handles image serving with resizing and caching."""
     
-    def __init__(self, image_root, cache_root):
+    def __init__(self, image_root, cache_root, max_width=4000, max_height=4000, 
+                 default_quality=85, max_file_size_mb=50):
         """
         Initialize the image server.
         
         Args:
             image_root: Path to the directory containing original images
             cache_root: Path to the directory for cached resized images
+            max_width: Maximum allowed width in pixels
+            max_height: Maximum allowed height in pixels
+            default_quality: Default JPEG quality (1-100)
+            max_file_size_mb: Maximum file size in MB to serve (prevents memory issues)
         """
         self.image_root = Path(image_root).resolve()
         self.cache_root = Path(cache_root).resolve()
+        self.max_width = max_width
+        self.max_height = max_height
+        self.default_quality = default_quality
+        self.max_file_size_bytes = max_file_size_mb * 1024 * 1024
         
         # Create cache directory if it doesn't exist
         self.cache_root.mkdir(parents=True, exist_ok=True)
@@ -128,11 +138,17 @@ class ImageServer:
                 img.thumbnail((width, height), Image.Resampling.LANCZOS)
             elif width:
                 # Only width specified
+                # Check for zero dimensions to prevent division by zero
+                if original_width == 0:
+                    raise ValueError("Image has invalid width (0 pixels)")
                 aspect_ratio = original_height / original_width
                 new_height = int(width * aspect_ratio)
                 img = img.resize((width, new_height), Image.Resampling.LANCZOS)
             else:
                 # Only height specified
+                # Check for zero dimensions to prevent division by zero
+                if original_height == 0:
+                    raise ValueError("Image has invalid height (0 pixels)")
                 aspect_ratio = original_width / original_height
                 new_width = int(height * aspect_ratio)
                 img = img.resize((new_width, height), Image.Resampling.LANCZOS)
@@ -197,6 +213,14 @@ class ImageServer:
         if not image_path.is_file():
             return (404, 'text/plain', b'Not Found: Image does not exist')
         
+        # Check file size to prevent memory issues
+        try:
+            file_size = image_path.stat().st_size
+            if file_size > self.max_file_size_bytes:
+                return (413, 'text/plain', b'Request Entity Too Large: Image file too large')
+        except OSError:
+            return (500, 'text/plain', b'Internal Server Error: Cannot access file')
+        
         # Check if file is an image
         if image_path.suffix.lower() not in self.supported_formats:
             return (400, 'text/plain', b'Bad Request: Unsupported file type')
@@ -204,13 +228,22 @@ class ImageServer:
         # Determine content type
         content_type = mimetypes.guess_type(str(image_path))[0] or 'image/jpeg'
         
-        # If no resizing needed, serve original
-        if width is None and height is None:
+        # Check if we need to process the image (resize or quality adjustment)
+        # If no dimensions specified but quality is provided for JPEG, we might still want to apply quality
+        needs_processing = width is not None or height is not None
+        is_jpeg = image_path.suffix.lower() in {'.jpg', '.jpeg'}
+        
+        # If quality parameter is provided for JPEG and differs from default, treat as needing processing
+        if is_jpeg and quality != self.default_quality and not needs_processing:
+            needs_processing = True
+        
+        # If no processing needed, serve original
+        if not needs_processing:
             try:
                 with open(image_path, 'rb') as f:
                     return (200, content_type, f.read())
             except IOError:
-                return (500, 'text/plain', b'Internal Server Error: Cannot read image')
+                return (500, 'text/plain', b'Internal Server Error: Cannot read file')
         
         # Check cache
         cache_path = self._get_cache_path(image_path, width, height, quality)
@@ -222,7 +255,8 @@ class ImageServer:
                     with open(cache_path, 'rb') as f:
                         return (200, content_type, f.read())
                 except IOError:
-                    pass  # Fall through to regenerate
+                    # Cache read failed, fall through to regenerate
+                    pass
         
         # Resize and cache
         try:
@@ -234,11 +268,119 @@ class ImageServer:
                 with open(cache_path, 'wb') as f:
                     f.write(image_bytes)
             except IOError:
-                pass  # Cache write failed, but we can still serve the image
+                # Cache write failed, but we can still serve the image
+                pass
             
             return (200, content_type, image_bytes)
-        except Exception as e:
-            return (500, 'text/plain', f'Internal Server Error: {str(e)}'.encode('utf-8'))
+        except Exception:
+            # Don't expose internal error details to users
+            return (500, 'text/plain', b'Internal Server Error: Unable to process image')
+
+
+def load_config():
+    """
+    Load configuration from config.ini file or environment variables.
+    Environment variables take precedence over config file.
+    
+    Returns:
+        dict: Configuration dictionary
+    """
+    config = {
+        'image_root': '/home/username/images',
+        'cache_root': '/home/username/simple-album/cache',
+        'default_quality': 85,
+        'max_width': 4000,
+        'max_height': 4000,
+        'max_file_size_mb': 50,
+        'cache_max_age': 604800,  # 1 week in seconds
+    }
+    
+    # Try to load from config.ini file
+    config_path = Path(__file__).parent / 'config.ini'
+    if config_path.exists():
+        parser = configparser.ConfigParser()
+        try:
+            parser.read(config_path)
+            
+            if parser.has_section('server'):
+                if parser.has_option('server', 'image_root'):
+                    config['image_root'] = parser.get('server', 'image_root')
+                if parser.has_option('server', 'cache_root'):
+                    config['cache_root'] = parser.get('server', 'cache_root')
+            
+            if parser.has_section('resize'):
+                if parser.has_option('resize', 'default_quality'):
+                    config['default_quality'] = parser.getint('resize', 'default_quality')
+                if parser.has_option('resize', 'max_width'):
+                    config['max_width'] = parser.getint('resize', 'max_width')
+                if parser.has_option('resize', 'max_height'):
+                    config['max_height'] = parser.getint('resize', 'max_height')
+                if parser.has_option('resize', 'max_file_size_mb'):
+                    config['max_file_size_mb'] = parser.getint('resize', 'max_file_size_mb')
+            
+            if parser.has_section('cache'):
+                if parser.has_option('cache', 'max_age'):
+                    config['cache_max_age'] = parser.getint('cache', 'max_age')
+        except (configparser.Error, ValueError):
+            # If config file is malformed, just use defaults
+            pass
+    
+    # Environment variables override config file
+    if 'IMAGE_ROOT' in os.environ:
+        config['image_root'] = os.environ['IMAGE_ROOT']
+    if 'CACHE_ROOT' in os.environ:
+        config['cache_root'] = os.environ['CACHE_ROOT']
+    if 'DEFAULT_QUALITY' in os.environ:
+        try:
+            config['default_quality'] = int(os.environ['DEFAULT_QUALITY'])
+        except ValueError:
+            pass
+    if 'MAX_WIDTH' in os.environ:
+        try:
+            config['max_width'] = int(os.environ['MAX_WIDTH'])
+        except ValueError:
+            pass
+    if 'MAX_HEIGHT' in os.environ:
+        try:
+            config['max_height'] = int(os.environ['MAX_HEIGHT'])
+        except ValueError:
+            pass
+    if 'MAX_FILE_SIZE_MB' in os.environ:
+        try:
+            config['max_file_size_mb'] = int(os.environ['MAX_FILE_SIZE_MB'])
+        except ValueError:
+            pass
+    if 'CACHE_MAX_AGE' in os.environ:
+        try:
+            config['cache_max_age'] = int(os.environ['CACHE_MAX_AGE'])
+        except ValueError:
+            pass
+    
+    return config
+
+
+def get_server():
+    """
+    Get or create the server instance.
+    This is called lazily to avoid errors during import.
+    """
+    global _server, _config
+    if _server is None:
+        _config = load_config()
+        _server = ImageServer(
+            _config['image_root'],
+            _config['cache_root'],
+            max_width=_config['max_width'],
+            max_height=_config['max_height'],
+            default_quality=_config['default_quality'],
+            max_file_size_mb=_config['max_file_size_mb']
+        )
+    return _server, _config
+
+
+# Module-level variables (initialized lazily)
+_config = None
+_server = None
 
 
 def application(environ, start_response):
@@ -252,12 +394,8 @@ def application(environ, start_response):
     Returns:
         list: Response body
     """
-    # Get configuration from environment or use defaults
-    image_root = os.environ.get('IMAGE_ROOT', '/home/username/images')
-    cache_root = os.environ.get('CACHE_ROOT', '/home/username/simple-album/cache')
-    
-    # Initialize server
-    server = ImageServer(image_root, cache_root)
+    # Get the server instance (initialized lazily on first request)
+    server, config = get_server()
     
     # Get request path
     path = environ.get('PATH_INFO', '/')
@@ -269,20 +407,22 @@ def application(environ, start_response):
     # Extract resize parameters
     width = None
     height = None
-    quality = 85
+    quality = config['default_quality']
     
     if 'w' in params:
         try:
             width = int(params['w'][0])
-            width = max(1, min(width, 4000))  # Limit to reasonable range
+            width = max(1, min(width, config['max_width']))  # Limit to configured range
         except (ValueError, IndexError):
+            # Invalid parameter, ignore
             pass
     
     if 'h' in params:
         try:
             height = int(params['h'][0])
-            height = max(1, min(height, 4000))  # Limit to reasonable range
+            height = max(1, min(height, config['max_height']))  # Limit to configured range
         except (ValueError, IndexError):
+            # Invalid parameter, ignore
             pass
     
     if 'q' in params:
@@ -290,6 +430,7 @@ def application(environ, start_response):
             quality = int(params['q'][0])
             quality = max(1, min(quality, 100))  # Limit to valid range
         except (ValueError, IndexError):
+            # Invalid parameter, use default
             pass
     
     # Serve the image
@@ -301,9 +442,10 @@ def application(environ, start_response):
         400: 'Bad Request',
         403: 'Forbidden',
         404: 'Not Found',
+        413: 'Request Entity Too Large',
         500: 'Internal Server Error'
     }
-    status = f'{status_code} {status_messages.get(status_code, "Error")}'
+    status = '{0} {1}'.format(status_code, status_messages.get(status_code, 'Error'))
     
     # Set response headers
     response_headers = [
@@ -314,9 +456,11 @@ def application(environ, start_response):
     # Add caching headers for successful responses
     if status_code == 200:
         response_headers.extend([
-            ('Cache-Control', 'public, max-age=31536000'),  # 1 year
-
+            ('Cache-Control', 'public, max-age={0}'.format(config['cache_max_age'])),
         ])
+    
+    start_response(status, response_headers)
+    return [data]
     
     start_response(status, response_headers)
     return [data]

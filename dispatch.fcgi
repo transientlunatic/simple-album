@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """
 FastCGI dispatcher for DreamHost shared hosting.
 This script should be placed in your web-accessible directory and made executable.
