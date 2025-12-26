@@ -104,7 +104,7 @@ class ImageServer:
             if width is None and height is None:
                 output = BytesIO()
                 # Only apply quality to JPEG images
-                if img.format in ('JPEG', 'JPG'):
+                if img.format == 'JPEG':
                     img.save(output, format=img.format, quality=quality)
                 else:
                     img.save(output, format=img.format or 'PNG')
@@ -113,7 +113,9 @@ class ImageServer:
             
             # Calculate new dimensions maintaining aspect ratio
             if width and height:
-                # Both specified - fit within box
+                # Both specified - fit within box (thumbnail maintains aspect ratio)
+                # Make a copy since thumbnail modifies in-place
+                img = img.copy()
                 img.thumbnail((width, height), Image.Resampling.LANCZOS)
             elif width:
                 # Only width specified
@@ -129,17 +131,22 @@ class ImageServer:
             # Save to BytesIO
             output = BytesIO()
             
+            # Determine if this is a JPEG based on file extension
+            is_jpeg = image_path.suffix.lower() in {'.jpg', '.jpeg'}
+            
             # Convert RGBA to RGB for JPEG
-            if img.mode == 'RGBA' and image_path.suffix.lower() in {'.jpg', '.jpeg'}:
+            if img.mode == 'RGBA' and is_jpeg:
                 rgb_img = Image.new('RGB', img.size, (255, 255, 255))
                 rgb_img.paste(img, mask=img.split()[3])
                 rgb_img.save(output, format='JPEG', quality=quality)
-            elif img.format in ('JPEG', 'JPG') or image_path.suffix.lower() in {'.jpg', '.jpeg'}:
+            elif is_jpeg:
                 # JPEG format - apply quality
                 img.save(output, format='JPEG', quality=quality)
             else:
                 # Other formats - don't use quality parameter
-                img.save(output, format=img.format or 'PNG')
+                # Determine format from original image or use PNG as default
+                save_format = img.format if img.format else 'PNG'
+                img.save(output, format=save_format)
             
             output.seek(0)
             return output
