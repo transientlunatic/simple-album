@@ -1,0 +1,14 @@
+[server]
+# Directory containing original images
+image_root = /home/username/images
+
+# Directory for cached resized images
+cache_root = /home/username/simple-album/cache
+
+[resize]
+# Default quality for JPEG images (1-100)
+default_quality = 85
+
+# Maximum allowed dimensions (prevents abuse)
+max_width = 4000
+max_height = 4000

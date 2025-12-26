@@ -1,0 +1,14 @@
+# Enable FastCGI for this directory
+AddHandler fcgid-script .fcgi
+
+# Rewrite rules to route requests to the FastCGI application
+RewriteEngine On
+RewriteBase /
+
+# Don't rewrite if the file actually exists (for static files like .fcgi)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# Route all image requests to the FastCGI application
+# Preserves the path and query string
+RewriteRule ^(.*)$ /dispatch.fcgi/$1 [QSA,L]
