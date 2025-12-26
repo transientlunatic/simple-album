@@ -19,3 +19,11 @@ max_file_size_mb = 50
 [cache]
 # Cache duration in seconds (default: 604800 = 1 week)
 max_age = 604800
+
+[upload]
+# Enable upload functionality (for Lightroom plugin)
+enabled = false
+
+# API key for upload authentication
+# Generate a secure random key: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+api_key =
