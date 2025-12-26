@@ -461,9 +461,6 @@ def application(environ, start_response):
     
     start_response(status, response_headers)
     return [data]
-    
-    start_response(status, response_headers)
-    return [data]
 
 
 if __name__ == '__main__':
