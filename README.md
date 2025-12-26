@@ -211,14 +211,24 @@ python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 
 ### Upload Endpoint
 
-**POST** `/<path>?api_key=<your_api_key>`
+**POST** `/<path>`
 
 - **Path**: Destination path for the image (e.g., `/photos/myimage.jpg`)
 - **Body**: Raw image data (binary)
-- **Query Parameter**: `api_key` - Your API key for authentication
-- **Alternative**: Send API key in `Authorization: Bearer <api_key>` header
+- **Authentication**: Use one of these methods:
+  - **Recommended**: `Authorization: Bearer <api_key>` header
+  - Alternative: Query parameter `?api_key=<api_key>` (may be logged by web servers)
 
-**Example using curl:**
+**Example using curl (with Authorization header):**
+```bash
+curl -X POST \
+  "https://images.yourdomain.com/photos/newimage.jpg" \
+  --data-binary @/path/to/local/image.jpg \
+  -H "Content-Type: image/jpeg" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+**Example using curl (with query parameter):**
 ```bash
 curl -X POST \
   "https://images.yourdomain.com/photos/newimage.jpg?api_key=YOUR_API_KEY" \
@@ -328,6 +338,11 @@ Usage in content:
 
 - **Path traversal protection**: The server validates all paths to prevent access to files outside the image root directory
 - **File type validation**: Only image files with supported extensions are served
+- **Dimension limits**: Width and height are capped at 4000 pixels to prevent resource abuse
+- **Quality limits**: JPEG quality is limited to the range 1-100
+- **Upload authentication**: Uploads require a valid API key for authentication
+- **Image validation**: Uploaded files are validated to ensure they are legitimate images
+- **HTTPS recommended**: For production use, always use HTTPS to encrypt API keys in transit
 - **Dimension limits**: Width and height are capped at 4000 pixels to prevent resource abuse
 - **Quality limits**: JPEG quality is limited to the range 1-100
 

@@ -109,22 +109,25 @@ export UPLOAD_API_KEY=your_api_key_here
 
 ## Security Notes
 
-- The API key is transmitted in the URL query parameter. For production use, consider using HTTPS to encrypt the connection.
+- **HTTPS strongly recommended**: The plugin uses the Authorization header to send the API key securely, but you should always use HTTPS to encrypt all communication
 - API keys should be kept secret and not shared
 - The server validates paths to prevent directory traversal attacks
 - Only image files are accepted
+- The server validates uploaded images to prevent malicious files
 
 ## API Reference
 
 The plugin uses the Simple Album server's upload API:
 
-**Endpoint**: `POST /<path>?api_key=<key>`
+**Endpoint**: `POST /<path>`
 
 **Request**:
 - Method: POST
 - Body: Raw image data
-- Query Parameters:
-  - `api_key`: Your server API key
+- Headers:
+  - `Authorization: Bearer <api_key>` - Your server API key (recommended)
+  - `Content-Type: image/jpeg` or `image/png`
+- Alternative: Query parameter `?api_key=<key>` (less secure, may be logged)
 
 **Response**:
 - Success (201): `{"success": true, "message": "Image uploaded successfully", "path": "..."}`

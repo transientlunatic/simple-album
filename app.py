@@ -336,7 +336,7 @@ class ImageServer:
         try:
             img = Image.open(BytesIO(image_data))
             img.verify()  # Verify it's a valid image
-        except Exception:
+        except (Image.UnidentifiedImageError, IOError, ValueError) as e:
             return (400, 'application/json', json.dumps({
                 'error': 'Bad Request: Invalid image file'
             }).encode('utf-8'))

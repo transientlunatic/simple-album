@@ -178,12 +178,22 @@ function exportServiceProvider.processRenderedPhotos( functionContext, exportCon
                 if not fileContent then
                     rendition:renditionIsDone( false, "Could not read rendered image file." )
                 else
-                    -- Construct upload URL
-                    local uploadUrl = serverUrl .. "/" .. uploadPath .. filename .. "?api_key=" .. apiKey
+                    -- Construct upload URL (without API key in URL for better security)
+                    local uploadUrl = serverUrl .. "/" .. uploadPath .. filename
                     
-                    -- Upload the file
+                    -- Determine content type based on file extension
+                    local contentType = "image/jpeg"
+                    local ext = string.lower(LrPathUtils.extension(filename))
+                    if ext == "png" then
+                        contentType = "image/png"
+                    elseif ext == "jpg" or ext == "jpeg" then
+                        contentType = "image/jpeg"
+                    end
+                    
+                    -- Upload the file with API key in Authorization header
                     local result, hdrs = LrHttp.post( uploadUrl, fileContent, {
-                        { field = "Content-Type", value = "image/jpeg" },
+                        { field = "Content-Type", value = contentType },
+                        { field = "Authorization", value = "Bearer " .. apiKey },
                     })
                     
                     -- Check upload status
