@@ -369,9 +369,33 @@ Usage in content:
 
 ### 500 Internal Server Error
 
-1. Ensure Python dependencies are installed in the correct Python environment
-2. Check that the Python shebang in `dispatch.fcgi` points to the correct Python binary
-3. Verify the virtual environment path if using one
+**Common causes:**
+
+1. **Missing dependencies**: Ensure Python dependencies are installed in the correct Python environment:
+   ```bash
+   pip install -r requirements.txt
+   # Or if using a virtual environment:
+   source venv/bin/activate
+   pip install -r requirements.txt
+   ```
+
+2. **Wrong Python version**: The script requires Python 3.6+. Check that the shebang in `dispatch.fcgi` points to the correct Python binary:
+   ```bash
+   which python3
+   # Update the first line of dispatch.fcgi if needed
+   ```
+
+3. **Virtual environment path**: If using a virtual environment, you may need to update the shebang to point directly to the Python binary in the venv:
+   ```python
+   #!/home/username/yourdomain.com/simple-album/venv/bin/python3
+   ```
+
+4. **Check error logs**: Look for specific error messages in your server's error logs:
+   ```bash
+   tail -50 ~/logs/yourdomain.com/http/error.log
+   ```
+   
+   If you see "End of script output before headers: dispatch.fcgi", this means the script is exiting before it can output HTTP headers. The error log should contain additional details about what went wrong (import errors, missing modules, etc.).
 
 ### Images not resizing
 
