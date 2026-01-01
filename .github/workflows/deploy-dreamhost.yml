@@ -34,8 +34,14 @@ jobs:
           REMOTE_HOST: ${{ secrets.DREAMHOST_HOST }}
           REMOTE_PATH: ${{ secrets.DREAMHOST_PATH }}
         run: |
+          # Validate required secrets are set
+          if [ -z "$REMOTE_USER" ] || [ -z "$REMOTE_HOST" ] || [ -z "$REMOTE_PATH" ]; then
+            echo "ERROR: Required secrets not set (DREAMHOST_USER, DREAMHOST_HOST, DREAMHOST_PATH)"
+            exit 1
+          fi
+          
           # Create deployment directory structure on remote if needed
-          ssh "${REMOTE_USER}@${REMOTE_HOST}" "mkdir -p ${REMOTE_PATH}"
+          ssh "${REMOTE_USER}@${REMOTE_HOST}" "mkdir -p \"${REMOTE_PATH}\""
           
           # Deploy application files using rsync
           rsync -avz --delete \
@@ -67,7 +73,15 @@ jobs:
           REMOTE_PATH: ${{ secrets.DREAMHOST_PATH }}
         run: |
           ssh "${REMOTE_USER}@${REMOTE_HOST}" "bash -s" << 'ENDSSH'
-          cd "$REMOTE_PATH"
+          set -e  # Exit on error
+          
+          # Validate REMOTE_PATH is set
+          if [ -z "$REMOTE_PATH" ]; then
+            echo "ERROR: REMOTE_PATH is not set"
+            exit 1
+          fi
+          
+          cd "$REMOTE_PATH" || exit 1
           
           # Make dispatch scripts executable
           chmod 755 dispatch.fcgi dispatch.cgi
@@ -92,18 +106,26 @@ jobs:
           REMOTE_PATH: ${{ secrets.DREAMHOST_PATH }}
         run: |
           ssh "${REMOTE_USER}@${REMOTE_HOST}" "bash -s" << 'ENDSSH'
-          cd "$REMOTE_PATH"
+          set -e  # Exit on error
+          
+          # Validate REMOTE_PATH is set
+          if [ -z "$REMOTE_PATH" ]; then
+            echo "ERROR: REMOTE_PATH is not set"
+            exit 1
+          fi
+          
+          cd "$REMOTE_PATH" || exit 1
           
           # Create virtual environment if it doesn't exist
           if [ ! -d "venv" ]; then
             echo "Creating virtual environment..."
-            python3 -m venv venv
+            python3 -m venv venv || exit 1
           fi
           
           # Activate virtual environment and install/update dependencies
-          source venv/bin/activate
-          pip install --upgrade pip
-          pip install -r requirements.txt
+          source venv/bin/activate || exit 1
+          pip install --upgrade pip || exit 1
+          pip install -r requirements.txt || exit 1
           
           echo "Dependencies installed/updated successfully"
           ENDSSH
