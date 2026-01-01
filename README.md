@@ -7,6 +7,7 @@ A lightweight FastCGI/CGI-based image server for serving resized images to stati
 - **On-demand image resizing**: Resize images to any dimension via URL parameters
 - **Intelligent caching**: Resized images are cached to avoid regeneration
 - **FastCGI and CGI support**: Optimized for shared hosting environments like DreamHost
+- **Automated deployment**: GitHub Actions workflow for secure SSH deployment to DreamHost
 - **Secure**: Path traversal protection prevents unauthorized file access
 - **Multiple formats**: Supports JPG, PNG, GIF, WebP, and BMP
 - **Hugo/Jekyll friendly**: Images are accessible via predictable URLs for static site generators
@@ -21,7 +22,24 @@ A lightweight FastCGI/CGI-based image server for serving resized images to stati
 
 ## Installation
 
-### On DreamHost Shared Hosting
+### Automated Deployment (GitHub Actions)
+
+**Recommended for easy updates and continuous deployment**
+
+The repository includes a GitHub Actions workflow that automatically deploys to your DreamHost server via SSH.
+
+1. **Fork or clone this repository to your GitHub account**
+
+2. **Set up SSH deployment keys** - See [.github/workflows/README.md](.github/workflows/README.md) for detailed instructions:
+   - Generate SSH key pair
+   - Add public key to DreamHost server
+   - Configure GitHub Secrets (SSH_KEY, USER, HOST, PATH, KNOWN_HOSTS)
+
+3. **Push to main branch** - Deployment happens automatically, or use the manual workflow trigger
+
+For complete setup instructions, see [Automated Deployment Guide](.github/workflows/README.md).
+
+### Manual Installation on DreamHost Shared Hosting
 
 1. **SSH into your DreamHost server**
 
