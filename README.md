@@ -1,12 +1,12 @@
 # simple-album
 
-A lightweight FastCGI-based image server for serving resized images to static site generators like Hugo, Jekyll, or Gatsby. Includes an Adobe Lightroom plugin for direct image uploads. Designed to run on DreamHost shared hosting environments and keep image files out of git repositories.
+A lightweight FastCGI/CGI-based image server for serving resized images to static site generators like Hugo, Jekyll, or Gatsby. Includes an Adobe Lightroom plugin for direct image uploads. Designed to run on DreamHost shared hosting environments and keep image files out of git repositories.
 
 ## Features
 
 - **On-demand image resizing**: Resize images to any dimension via URL parameters
 - **Intelligent caching**: Resized images are cached to avoid regeneration
-- **FastCGI support**: Optimized for shared hosting environments like DreamHost
+- **FastCGI and CGI support**: Optimized for shared hosting environments like DreamHost
 - **Secure**: Path traversal protection prevents unauthorized file access
 - **Multiple formats**: Supports JPG, PNG, GIF, WebP, and BMP
 - **Hugo/Jekyll friendly**: Images are accessible via predictable URLs for static site generators
@@ -61,10 +61,25 @@ A lightweight FastCGI-based image server for serving resized images to static si
    
    Note: Environment variables in `dispatch.fcgi` override settings in `config.ini`.
 
-6. **Make the dispatcher executable**:
+6. **Choose your dispatcher** (FastCGI or CGI):
+   
+   **Option A: FastCGI (Recommended - Better Performance)**
    ```bash
    chmod +x dispatch.fcgi
+   # Update .htaccess to use dispatch.fcgi (default configuration)
    ```
+   
+   **Option B: CGI (Use if FastCGI isn't available)**
+   ```bash
+   chmod +x dispatch.cgi
+   # Update .htaccess to use dispatch.cgi instead:
+   # Change: RewriteRule ^(.*)$ dispatch.fcgi/$1 [QSA,L]
+   # To:     RewriteRule ^(.*)$ dispatch.cgi/$1 [QSA,L]
+   # Also change: AddHandler fcgid-script .fcgi
+   # To:          AddHandler cgi-script .cgi
+   ```
+   
+   Note: CGI is provided as a fallback for environments where FastCGI is not available or not working. FastCGI is preferred for better performance.
 
 7. **Create the cache directory**:
    ```bash
@@ -72,7 +87,7 @@ A lightweight FastCGI-based image server for serving resized images to static si
    ```
 
 8. **Update .htaccess** if needed:
-   The included `.htaccess` should work out of the box, but verify the path to `dispatch.fcgi` matches your setup.
+   The included `.htaccess` should work out of the box with FastCGI. If using CGI, see step 6 for required changes.
 
 ### Local Development
 
@@ -292,7 +307,8 @@ For detailed instructions, see [SimpleAlbumUpload.lrplugin/README.md](SimpleAlbu
 ```
 simple-album/
 ├── app.py                          # Main application logic
-├── dispatch.fcgi                   # FastCGI dispatcher for DreamHost
+├── dispatch.fcgi                   # FastCGI dispatcher for DreamHost (recommended)
+├── dispatch.cgi                    # CGI dispatcher (fallback option)
 ├── .htaccess                       # Apache configuration
 ├── requirements.txt                # Python dependencies
 ├── config.ini.example              # Example configuration
@@ -396,6 +412,28 @@ Usage in content:
    ```
    
    If you see "End of script output before headers: dispatch.fcgi", this means the script is exiting before it can output HTTP headers. The error log should contain additional details about what went wrong (import errors, missing modules, etc.).
+
+5. **FastCGI not available or "write() argument must be str, not bytes" error**: 
+   
+   If you see an error like `TypeError: write() argument must be str, not bytes` when using `dispatch.fcgi`, this indicates a compatibility issue with FastCGI on your hosting environment. **Solution: Switch to CGI mode**:
+   
+   ```bash
+   # Use dispatch.cgi instead
+   chmod +x dispatch.cgi
+   ```
+   
+   Update your `.htaccess` file:
+   ```apache
+   # Change from FastCGI:
+   AddHandler fcgid-script .fcgi
+   RewriteRule ^(.*)$ dispatch.fcgi/$1 [QSA,L]
+   
+   # To CGI:
+   AddHandler cgi-script .cgi
+   RewriteRule ^(.*)$ dispatch.cgi/$1 [QSA,L]
+   ```
+   
+   Note: CGI is slower than FastCGI but more compatible across hosting environments.
 
 ### Images not resizing
 
