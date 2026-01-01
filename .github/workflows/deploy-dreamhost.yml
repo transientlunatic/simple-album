@@ -1,0 +1,138 @@
+name: Deploy to DreamHost
+
+on:
+  # Trigger on push to main branch
+  push:
+    branches:
+      - main
+  # Allow manual deployment
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to DreamHost via SSH
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup SSH key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DREAMHOST_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DREAMHOST_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          echo "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+      
+      - name: Deploy application files
+        env:
+          REMOTE_USER: ${{ secrets.DREAMHOST_USER }}
+          REMOTE_HOST: ${{ secrets.DREAMHOST_HOST }}
+          REMOTE_PATH: ${{ secrets.DREAMHOST_PATH }}
+        run: |
+          # Validate required secrets are set
+          if [ -z "$REMOTE_USER" ] || [ -z "$REMOTE_HOST" ] || [ -z "$REMOTE_PATH" ]; then
+            echo "ERROR: Required secrets not set (DREAMHOST_USER, DREAMHOST_HOST, DREAMHOST_PATH)"
+            exit 1
+          fi
+          
+          # Create deployment directory structure on remote if needed
+          ssh "${REMOTE_USER}@${REMOTE_HOST}" "mkdir -p \"${REMOTE_PATH}\""
+          
+          # Deploy application files using rsync
+          rsync -avz --delete \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='__pycache__' \
+            --exclude='*.pyc' \
+            --exclude='*.pyo' \
+            --exclude='.Python' \
+            --exclude='venv' \
+            --exclude='env' \
+            --exclude='ENV' \
+            --exclude='cache' \
+            --exclude='test_images' \
+            --exclude='*.swp' \
+            --exclude='*.swo' \
+            --exclude='.vscode' \
+            --exclude='.idea' \
+            --exclude='config.local.ini' \
+            --exclude='.gitignore' \
+            --exclude='test_server.py' \
+            --exclude='run_local.py' \
+            ./ "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/"
+      
+      - name: Set file permissions
+        env:
+          REMOTE_USER: ${{ secrets.DREAMHOST_USER }}
+          REMOTE_HOST: ${{ secrets.DREAMHOST_HOST }}
+          REMOTE_PATH: ${{ secrets.DREAMHOST_PATH }}
+        run: |
+          ssh "${REMOTE_USER}@${REMOTE_HOST}" "export REMOTE_PATH='${REMOTE_PATH}' && bash -s" << 'ENDSSH'
+          set -e  # Exit on error
+          
+          # Validate REMOTE_PATH is set
+          if [ -z "$REMOTE_PATH" ]; then
+            echo "ERROR: REMOTE_PATH is not set"
+            exit 1
+          fi
+          
+          cd "$REMOTE_PATH" || exit 1
+          
+          # Make dispatch scripts executable
+          chmod 755 dispatch.fcgi dispatch.cgi
+          
+          # Make main application readable
+          chmod 644 app.py
+          
+          # Ensure .htaccess is readable
+          chmod 644 .htaccess
+          
+          # Create cache directory if it doesn't exist
+          mkdir -p cache
+          chmod 755 cache
+          
+          echo "File permissions set successfully"
+          ENDSSH
+      
+      - name: Install/update Python dependencies
+        env:
+          REMOTE_USER: ${{ secrets.DREAMHOST_USER }}
+          REMOTE_HOST: ${{ secrets.DREAMHOST_HOST }}
+          REMOTE_PATH: ${{ secrets.DREAMHOST_PATH }}
+        run: |
+          ssh "${REMOTE_USER}@${REMOTE_HOST}" "export REMOTE_PATH='${REMOTE_PATH}' && bash -s" << 'ENDSSH'
+          set -e  # Exit on error
+          
+          # Validate REMOTE_PATH is set
+          if [ -z "$REMOTE_PATH" ]; then
+            echo "ERROR: REMOTE_PATH is not set"
+            exit 1
+          fi
+          
+          cd "$REMOTE_PATH" || exit 1
+          
+          # Create virtual environment if it doesn't exist
+          if [ ! -d "venv" ]; then
+            echo "Creating virtual environment..."
+            python3 -m venv venv || exit 1
+          fi
+          
+          # Activate virtual environment and install/update dependencies
+          source venv/bin/activate || exit 1
+          pip install --upgrade pip || exit 1
+          pip install -r requirements.txt || exit 1
+          
+          echo "Dependencies installed/updated successfully"
+          ENDSSH
+      
+      - name: Deployment summary
+        env:
+          REMOTE_PATH: ${{ secrets.DREAMHOST_PATH }}
+        run: |
+          echo "✅ Deployment to DreamHost completed successfully!"
+          echo "Files deployed to: ${REMOTE_PATH}"

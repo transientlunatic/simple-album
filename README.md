@@ -1,12 +1,13 @@
 # simple-album
 
-A lightweight FastCGI-based image server for serving resized images to static site generators like Hugo, Jekyll, or Gatsby. Includes an Adobe Lightroom plugin for direct image uploads. Designed to run on DreamHost shared hosting environments and keep image files out of git repositories.
+A lightweight FastCGI/CGI-based image server for serving resized images to static site generators like Hugo, Jekyll, or Gatsby. Includes an Adobe Lightroom plugin for direct image uploads. Designed to run on DreamHost shared hosting environments and keep image files out of git repositories.
 
 ## Features
 
 - **On-demand image resizing**: Resize images to any dimension via URL parameters
 - **Intelligent caching**: Resized images are cached to avoid regeneration
-- **FastCGI support**: Optimized for shared hosting environments like DreamHost
+- **FastCGI and CGI support**: Optimized for shared hosting environments like DreamHost
+- **Automated deployment**: GitHub Actions workflow for secure SSH deployment to DreamHost
 - **Secure**: Path traversal protection prevents unauthorized file access
 - **Multiple formats**: Supports JPG, PNG, GIF, WebP, and BMP
 - **Hugo/Jekyll friendly**: Images are accessible via predictable URLs for static site generators
@@ -21,7 +22,24 @@ A lightweight FastCGI-based image server for serving resized images to static si
 
 ## Installation
 
-### On DreamHost Shared Hosting
+### Automated Deployment (GitHub Actions)
+
+**Recommended for easy updates and continuous deployment**
+
+The repository includes a GitHub Actions workflow that automatically deploys to your DreamHost server via SSH.
+
+1. **Fork or clone this repository to your GitHub account**
+
+2. **Set up SSH deployment keys** - See [.github/workflows/README.md](.github/workflows/README.md) for detailed instructions:
+   - Generate SSH key pair
+   - Add public key to DreamHost server
+   - Configure GitHub Secrets (SSH_KEY, USER, HOST, PATH, KNOWN_HOSTS)
+
+3. **Push to main branch** - Deployment happens automatically, or use the manual workflow trigger
+
+For complete setup instructions, see [Automated Deployment Guide](.github/workflows/README.md).
+
+### Manual Installation on DreamHost Shared Hosting
 
 1. **SSH into your DreamHost server**
 
@@ -61,10 +79,25 @@ A lightweight FastCGI-based image server for serving resized images to static si
    
    Note: Environment variables in `dispatch.fcgi` override settings in `config.ini`.
 
-6. **Make the dispatcher executable**:
+6. **Choose your dispatcher** (FastCGI or CGI):
+   
+   **Option A: FastCGI (Recommended - Better Performance)**
    ```bash
    chmod +x dispatch.fcgi
+   # Update .htaccess to use dispatch.fcgi (default configuration)
    ```
+   
+   **Option B: CGI (Use if FastCGI isn't available)**
+   ```bash
+   chmod +x dispatch.cgi
+   # Update .htaccess to use dispatch.cgi instead:
+   # Change: RewriteRule ^(.*)$ dispatch.fcgi/$1 [QSA,L]
+   # To:     RewriteRule ^(.*)$ dispatch.cgi/$1 [QSA,L]
+   # Also change: AddHandler fcgid-script .fcgi
+   # To:          AddHandler cgi-script .cgi
+   ```
+   
+   Note: CGI is provided as a fallback for environments where FastCGI is not available or not working. FastCGI is preferred for better performance.
 
 7. **Create the cache directory**:
    ```bash
@@ -72,7 +105,7 @@ A lightweight FastCGI-based image server for serving resized images to static si
    ```
 
 8. **Update .htaccess** if needed:
-   The included `.htaccess` should work out of the box, but verify the path to `dispatch.fcgi` matches your setup.
+   The included `.htaccess` should work out of the box with FastCGI. If using CGI, see step 6 for required changes.
 
 ### Local Development
 
@@ -292,7 +325,8 @@ For detailed instructions, see [SimpleAlbumUpload.lrplugin/README.md](SimpleAlbu
 ```
 simple-album/
 ├── app.py                          # Main application logic
-├── dispatch.fcgi                   # FastCGI dispatcher for DreamHost
+├── dispatch.fcgi                   # FastCGI dispatcher for DreamHost (recommended)
+├── dispatch.cgi                    # CGI dispatcher (fallback option)
 ├── .htaccess                       # Apache configuration
 ├── requirements.txt                # Python dependencies
 ├── config.ini.example              # Example configuration
@@ -369,9 +403,55 @@ Usage in content:
 
 ### 500 Internal Server Error
 
-1. Ensure Python dependencies are installed in the correct Python environment
-2. Check that the Python shebang in `dispatch.fcgi` points to the correct Python binary
-3. Verify the virtual environment path if using one
+**Common causes:**
+
+1. **Missing dependencies**: Ensure Python dependencies are installed in the correct Python environment:
+   ```bash
+   pip install -r requirements.txt
+   # Or if using a virtual environment:
+   source venv/bin/activate
+   pip install -r requirements.txt
+   ```
+
+2. **Wrong Python version**: The script requires Python 3.6+. Check that the shebang in `dispatch.fcgi` points to the correct Python binary:
+   ```bash
+   which python3
+   # Update the first line of dispatch.fcgi if needed
+   ```
+
+3. **Virtual environment path**: If using a virtual environment, you may need to update the shebang to point directly to the Python binary in the venv:
+   ```python
+   #!/home/username/yourdomain.com/simple-album/venv/bin/python3
+   ```
+
+4. **Check error logs**: Look for specific error messages in your server's error logs:
+   ```bash
+   tail -50 ~/logs/yourdomain.com/http/error.log
+   ```
+   
+   If you see "End of script output before headers: dispatch.fcgi", this means the script is exiting before it can output HTTP headers. The error log should contain additional details about what went wrong (import errors, missing modules, etc.).
+
+5. **FastCGI not available or "write() argument must be str, not bytes" error**: 
+   
+   If you see an error like `TypeError: write() argument must be str, not bytes` when using `dispatch.fcgi`, this indicates a compatibility issue with FastCGI on your hosting environment. **Solution: Switch to CGI mode**:
+   
+   ```bash
+   # Use dispatch.cgi instead
+   chmod +x dispatch.cgi
+   ```
+   
+   Update your `.htaccess` file:
+   ```apache
+   # Change from FastCGI:
+   AddHandler fcgid-script .fcgi
+   RewriteRule ^(.*)$ dispatch.fcgi/$1 [QSA,L]
+   
+   # To CGI:
+   AddHandler cgi-script .cgi
+   RewriteRule ^(.*)$ dispatch.cgi/$1 [QSA,L]
+   ```
+   
+   Note: CGI is slower than FastCGI but more compatible across hosting environments.
 
 ### Images not resizing
 
