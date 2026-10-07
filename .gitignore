@@ -38,3 +38,4 @@ config.local.ini
 *.swp
 *.swo
 *~
+.pytest_cache/
