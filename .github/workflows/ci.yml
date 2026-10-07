@@ -35,5 +35,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # SC2029 (client-side expansion in ssh commands) is intentional in the deploy workflow.
       - name: actionlint
-        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest -color
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest -color -ignore 'SC2029'
