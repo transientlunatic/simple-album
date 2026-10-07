@@ -8,6 +8,12 @@ import sys
 import os
 import traceback
 
+# Re-exec under the bundled virtualenv (created by the deploy workflow) if present,
+# so the shebang doesn't need hand-editing and survives redeploys.
+_VENV_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'venv', 'bin', 'python3')
+if os.path.exists(_VENV_PY) and os.path.realpath(sys.prefix) != os.path.realpath(os.path.dirname(os.path.dirname(_VENV_PY))):
+    os.execv(_VENV_PY, [_VENV_PY] + sys.argv)
+
 def log_error(message):
     """Write error message to stderr and flush immediately."""
     print(message, file=sys.stderr)

@@ -419,7 +419,7 @@ Usage in content:
    # Update the first line of dispatch.fcgi if needed
    ```
 
-3. **Virtual environment path**: If using a virtual environment, you may need to update the shebang to point directly to the Python binary in the venv:
+3. **Virtual environment path**: Both dispatchers automatically re-run under `venv/bin/python3` in the application directory if it exists. If your virtualenv lives elsewhere, point the shebang directly at its Python binary:
    ```python
    #!/home/username/yourdomain.com/simple-album/venv/bin/python3
    ```

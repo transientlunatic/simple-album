@@ -12,6 +12,12 @@ import sys
 import os
 import traceback
 
+# Re-exec under the bundled virtualenv (created by the deploy workflow) if present,
+# so the shebang doesn't need hand-editing and survives redeploys.
+_VENV_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'venv', 'bin', 'python3')
+if os.path.exists(_VENV_PY) and os.path.realpath(sys.prefix) != os.path.realpath(os.path.dirname(os.path.dirname(_VENV_PY))):
+    os.execv(_VENV_PY, [_VENV_PY] + sys.argv)
+
 def log_error(message):
     """Write error message to stderr and flush immediately."""
     print(message, file=sys.stderr)
@@ -67,8 +73,13 @@ def run_cgi():
     # Build the WSGI environ dictionary from CGI environment
     environ = dict(os.environ.items())
     
+    # Apache sets SCRIPT_NAME to the dispatcher (e.g. /dispatch.cgi) and PATH_INFO to
+    # the rewritten remainder; the app routes on PATH_INFO, so expose the real script
+    # name and keep PATH_INFO as given.
+    environ.setdefault('PATH_INFO', '/')
+
     # Add WSGI-specific variables
-    environ['wsgi.input'] = sys.stdin.buffer if hasattr(sys.stdin, 'buffer') else sys.stdin
+    environ['wsgi.input'] = sys.stdin.buffer
     environ['wsgi.errors'] = sys.stderr
     environ['wsgi.version'] = (1, 0)
     environ['wsgi.multithread'] = False
@@ -85,30 +96,28 @@ def run_cgi():
     headers_set = []
     headers_sent = []
     
+    def send_headers():
+        """Emit the CGI status line and headers (once)."""
+        status, response_headers = headers_set
+        out = sys.stdout.buffer
+        out.write(b'Status: ' + status.encode('latin-1') + b'\r\n')
+        for header_name, header_value in response_headers:
+            out.write(header_name.encode('latin-1') + b': ' +
+                      header_value.encode('latin-1') + b'\r\n')
+        out.write(b'\r\n')
+        headers_sent.append(True)
+
     def write(data):
         """Write response data to stdout."""
         if not headers_set:
             raise AssertionError("write() before start_response()")
-        
         if not headers_sent:
-            # Send headers before first data write
-            status, response_headers = headers_sent[:] = headers_set
-            # Use stdout.buffer for binary data in Python 3
-            output = sys.stdout.buffer if hasattr(sys.stdout, 'buffer') else sys.stdout
-            output.write(b'Status: ' + status.encode('latin-1') + b'\r\n')
-            for header_name, header_value in response_headers:
-                output.write(header_name.encode('latin-1') + b': ' + 
-                           header_value.encode('latin-1') + b'\r\n')
-            output.write(b'\r\n')
-            output.flush()
-        
-        # Write data - ensure it's bytes
-        output = sys.stdout.buffer if hasattr(sys.stdout, 'buffer') else sys.stdout
+            send_headers()
         if isinstance(data, str):
             data = data.encode('utf-8')
-        output.write(data)
-        output.flush()
-    
+        sys.stdout.buffer.write(data)
+        sys.stdout.buffer.flush()
+
     def start_response(status, response_headers, exc_info=None):
         """WSGI start_response callable."""
         if exc_info:
@@ -131,8 +140,9 @@ def run_cgi():
             for data in result:
                 if data:  # Don't send headers until body appears
                     write(data)
-            if not headers_sent:
-                write(b'')  # Send headers if body was empty
+            if not headers_sent and headers_set:
+                send_headers()  # Body was empty
+                sys.stdout.buffer.flush()
         finally:
             if hasattr(result, 'close'):
                 result.close()
@@ -145,6 +155,12 @@ def run_cgi():
         log_error("Full traceback:")
         log_error(traceback.format_exc())
         log_error("=" * 70)
+        if not headers_sent:
+            # Return a proper 500 rather than "End of script output before headers"
+            sys.stdout.buffer.write(b'Status: 500 Internal Server Error\r\n'
+                                    b'Content-Type: text/plain\r\n\r\n'
+                                    b'Internal Server Error\n')
+            sys.stdout.buffer.flush()
         sys.exit(1)
 
 
