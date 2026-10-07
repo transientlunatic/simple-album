@@ -126,7 +126,7 @@ If you prefer to deploy manually without GitHub Actions:
 
 ```bash
 # From your local repository directory
-rsync -avz --delete \
+rsync -avz \
   --exclude='.git' \
   --exclude='venv' \
   --exclude='cache' \
@@ -160,7 +160,7 @@ on:
 Modify the `rsync` command to include only specific directories:
 
 ```yaml
-rsync -avz --delete \
+rsync -avz \
   --include='app.py' \
   --include='dispatch.*' \
   --include='.htaccess' \
@@ -171,3 +171,9 @@ rsync -avz --delete \
 ### Add Deployment Notifications
 
 Add a step to notify via email, Slack, or Discord when deployment completes.
+
+## Notes
+
+- The deploy uses `rsync` **without** `--delete`, so files that only exist on the server (e.g. `config.ini`) are never removed. Files deleted from the repo must be removed from the server manually.
+- Deploys are serialised via a `concurrency` group and the workflow only requests `contents: read`.
+- `dispatch.fcgi`/`dispatch.cgi` re-exec under `venv/bin/python3` when it exists, so the venv built by the workflow is used without editing the shebang.

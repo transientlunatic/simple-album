@@ -8,6 +8,13 @@ on:
   # Allow manual deployment
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-dreamhost
+  cancel-in-progress: false
+
 jobs:
   deploy:
     name: Deploy to DreamHost via SSH
@@ -23,8 +30,8 @@ jobs:
           SSH_KNOWN_HOSTS: ${{ secrets.DREAMHOST_KNOWN_HOSTS }}
         run: |
           mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
           echo "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
       
@@ -44,7 +51,7 @@ jobs:
           ssh "${REMOTE_USER}@${REMOTE_HOST}" "mkdir -p \"${REMOTE_PATH}\""
           
           # Deploy application files using rsync
-          rsync -avz --delete \
+          rsync -avz \
             --exclude='.git' \
             --exclude='.github' \
             --exclude='__pycache__' \
