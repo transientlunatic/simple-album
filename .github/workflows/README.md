@@ -178,3 +178,14 @@ Add a step to notify via email, Slack, or Discord when deployment completes.
 - Deploys are serialised via a `concurrency` group and the workflow only requests `contents: read`.
 - `dispatch.fcgi`/`dispatch.cgi` re-exec under `venv/bin/python3` when it exists, so the venv built by the workflow is used without editing the shebang.
 - The server's default `python3` may be too old (DreamHost often ships 3.6). The deploy picks the newest `python3.9`–`python3.13` on `PATH`, or the interpreter named by the optional **repository variable** `DREAMHOST_PYTHON` (Settings → Secrets and variables → Actions → Variables), e.g. `python3.11` or an absolute path. It fails early with a clear message if none is 3.9+. The venv is rebuilt if it was made with a different Python.
+
+## Post-deploy smoke test
+
+After deploying, the workflow requests the live site and fails if it is not working. Configure it with **repository variables** (Settings → Secrets and variables → Actions → Variables):
+
+| Variable | Required | Meaning |
+|---|---|---|
+| `DREAMHOST_URL` | yes (the check is skipped with a warning if unset) | Base URL, e.g. `https://images.example.com` |
+| `DREAMHOST_CHECK_PATH` | no | Path of an image that exists, e.g. `album/photo.jpg`; checked at original size and with `?w=64` |
+
+The first check asks for a non-existent image and requires the application's own `404` body, which only appears if the dispatcher started, imported the app and routed the request. A broken deploy returns a `500` or Apache's HTML 404 instead. Connection errors and `5xx` responses are retried for about a minute to allow for the app restarting.
