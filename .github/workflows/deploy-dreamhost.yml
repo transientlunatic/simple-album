@@ -117,8 +117,10 @@ jobs:
           REMOTE_USER: ${{ secrets.DREAMHOST_USER }}
           REMOTE_HOST: ${{ secrets.DREAMHOST_HOST }}
           REMOTE_PATH: ${{ secrets.DREAMHOST_PATH }}
+          # Optional repository variable: python interpreter to use, e.g. python3.11
+          REMOTE_PYTHON: ${{ vars.DREAMHOST_PYTHON }}
         run: |
-          ssh "${REMOTE_USER}@${REMOTE_HOST}" "export REMOTE_PATH='${REMOTE_PATH}' && bash -s" << 'ENDSSH'
+          ssh "${REMOTE_USER}@${REMOTE_HOST}" "export REMOTE_PATH='${REMOTE_PATH}' REMOTE_PYTHON='${REMOTE_PYTHON}' && bash -s" << 'ENDSSH'
           set -e  # Exit on error
           
           # Validate REMOTE_PATH is set
@@ -129,21 +131,48 @@ jobs:
           
           cd "$REMOTE_PATH" || exit 1
           
-          # Repair a venv whose pip is missing or broken (e.g. created without pip)
-          if [ -d venv ] && ! venv/bin/python3 -m pip --version >/dev/null 2>&1; then
-            echo "Existing venv has no working pip; recreating..."
-            rm -rf venv
+          # Pick a Python interpreter. The default `python3` on shared hosting is often too
+          # old (Pillow>=10.2 needs 3.8+; CI covers 3.9+). Use the DREAMHOST_PYTHON repo
+          # variable if set, otherwise the newest python3.x found on PATH.
+          PY=""
+          if [ -n "$REMOTE_PYTHON" ]; then
+            PY="$REMOTE_PYTHON"
+          else
+            for v in 3.13 3.12 3.11 3.10 3.9; do
+              if command -v "python$v" >/dev/null 2>&1; then PY="python$v"; break; fi
+            done
+          fi
+          if [ -z "$PY" ] || ! command -v "$PY" >/dev/null 2>&1; then
+            echo "ERROR: no suitable Python (3.9+) found on the server."
+            echo "Default python3 is: $(python3 --version 2>&1)"
+            echo "Available: $(ls /usr/bin/python3* /usr/local/bin/python3* 2>/dev/null | tr '\n' ' ')"
+            echo "Install a newer Python and set the DREAMHOST_PYTHON repository variable (e.g. python3.11 or an absolute path)."
+            exit 1
+          fi
+          if ! "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)'; then
+            echo "ERROR: $PY is $("$PY" --version 2>&1); Python 3.9+ is required."
+            exit 1
+          fi
+          echo "Using $PY ($("$PY" --version 2>&1))"
+
+          # Rebuild the venv if it is missing, broken, or built with a different Python
+          if [ -d venv ]; then
+            if ! venv/bin/python3 -m pip --version >/dev/null 2>&1 || \
+               [ "$(venv/bin/python3 -c 'import sys; print(sys.version_info[:2])' 2>/dev/null)" != "$("$PY" -c 'import sys; print(sys.version_info[:2])')" ]; then
+              echo "Existing venv is broken or uses a different Python; recreating..."
+              rm -rf venv
+            fi
           fi
 
           # Create virtual environment if it doesn't exist
           if [ ! -d venv ]; then
             echo "Creating virtual environment..."
-            if ! python3 -m venv venv; then
+            if ! "$PY" -m venv venv; then
               # ensurepip/python3-venv is often unavailable on shared hosting:
               # create the venv without pip and bootstrap pip separately.
               echo "venv with ensurepip failed; bootstrapping pip with get-pip.py..."
               rm -rf venv
-              python3 -m venv --without-pip venv || exit 1
+              "$PY" -m venv --without-pip venv || exit 1
               GET_PIP="$(mktemp)"
               curl -fsSL https://bootstrap.pypa.io/get-pip.py -o "$GET_PIP" || exit 1
               venv/bin/python3 "$GET_PIP" || exit 1
