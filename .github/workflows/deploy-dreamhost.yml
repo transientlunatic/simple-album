@@ -187,6 +187,64 @@ jobs:
           echo "Dependencies installed/updated successfully"
           ENDSSH
       
+      - name: Post-deploy smoke test
+        env:
+          # Repository variables (Settings -> Secrets and variables -> Actions -> Variables)
+          SITE_URL: ${{ vars.DREAMHOST_URL }}              # e.g. https://images.example.com
+          CHECK_PATH: ${{ vars.DREAMHOST_CHECK_PATH }}     # optional: an existing image, e.g. album/photo.jpg
+        run: |
+          set -euo pipefail
+          if [ -z "$SITE_URL" ]; then
+            echo "::warning::DREAMHOST_URL is not set; skipping the post-deploy smoke test"
+            exit 0
+          fi
+          SITE_URL="${SITE_URL%/}"
+          WORK="$(mktemp -d)"
+
+          # GET a URL, retrying on connection errors and 5xx (the app may still be
+          # restarting). Prints the final HTTP status; headers/body go to $WORK.
+          fetch() {
+            local url="$1" status attempt
+            for attempt in 1 2 3 4 5 6; do
+              status="$(curl -sS --max-time 30 -o "$WORK/body" -D "$WORK/headers" \
+                -w '%{http_code}' "$url" || true)"
+              status="${status:-000}"
+              case "$status" in
+                000|5??) echo "attempt $attempt: $url -> HTTP $status, retrying in 10s" >&2; sleep 10 ;;
+                *) break ;;
+              esac
+            done
+            echo "$status"
+          }
+
+          fail() { echo "::error::Smoke test failed: $*"; exit 1; }
+
+          # 1. A missing image must produce the *application's* 404, which proves the
+          #    dispatcher started, imported the app and routed the request (a broken
+          #    deploy gives a 500, or Apache's own HTML 404).
+          url="$SITE_URL/__smoke_test_missing__.jpg"
+          status="$(fetch "$url")"
+          echo "missing image: HTTP $status"
+          [ "$status" = "404" ] || fail "$url returned HTTP $status, expected 404"
+          grep -q "Image does not exist" "$WORK/body" \
+            || fail "404 for $url did not come from the application (body: $(head -c 200 "$WORK/body"))"
+
+          # 2. Optionally, a real image, original and resized.
+          if [ -n "$CHECK_PATH" ]; then
+            for q in "" "?w=64"; do
+              url="$SITE_URL/${CHECK_PATH#/}$q"
+              status="$(fetch "$url")"
+              echo "image $url: HTTP $status"
+              [ "$status" = "200" ] || fail "$url returned HTTP $status, expected 200"
+              grep -qi '^content-type: *image/' "$WORK/headers" \
+                || fail "$url did not return an image content type"
+              [ -s "$WORK/body" ] || fail "$url returned an empty body"
+            done
+          else
+            echo "DREAMHOST_CHECK_PATH not set; skipping the real-image check"
+          fi
+          echo "Smoke test passed"
+
       - name: Deployment summary
         env:
           REMOTE_PATH: ${{ secrets.DREAMHOST_PATH }}
