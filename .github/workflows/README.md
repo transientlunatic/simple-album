@@ -177,3 +177,4 @@ Add a step to notify via email, Slack, or Discord when deployment completes.
 - The deploy uses `rsync` **without** `--delete`, so files that only exist on the server (e.g. `config.ini`) are never removed. Files deleted from the repo must be removed from the server manually.
 - Deploys are serialised via a `concurrency` group and the workflow only requests `contents: read`.
 - `dispatch.fcgi`/`dispatch.cgi` re-exec under `venv/bin/python3` when it exists, so the venv built by the workflow is used without editing the shebang.
+- The server's default `python3` may be too old (DreamHost often ships 3.6). The deploy picks the newest `python3.9`–`python3.13` on `PATH`, or the interpreter named by the optional **repository variable** `DREAMHOST_PYTHON` (Settings → Secrets and variables → Actions → Variables), e.g. `python3.11` or an absolute path. It fails early with a clear message if none is 3.9+. The venv is rebuilt if it was made with a different Python.

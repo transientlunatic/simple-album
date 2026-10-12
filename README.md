@@ -16,7 +16,7 @@ A lightweight FastCGI/CGI-based image server for serving resized images to stati
 
 ## Requirements
 
-- Python 3.6+
+- Python 3.9+
 - Pillow (image processing)
 - flup6 (FastCGI support)
 
@@ -422,7 +422,7 @@ Usage in content:
    pip install -r requirements.txt
    ```
 
-2. **Wrong Python version**: The script requires Python 3.6+. Check that the shebang in `dispatch.fcgi` points to the correct Python binary:
+2. **Wrong Python version**: The app requires Python 3.9+ (Pillow 10.2+). Check that the shebang in `dispatch.fcgi` points to the correct Python binary:
    ```bash
    which python3
    # Update the first line of dispatch.fcgi if needed
