@@ -23,6 +23,14 @@ def log_error(message):
     print(message, file=sys.stderr)
     sys.stderr.flush()
 
+def emit_500():
+    """Send a minimal CGI 500 response so Apache doesn't report 'no headers'."""
+    sys.stdout.buffer.write(b'Status: 500 Internal Server Error\r\n'
+                            b'Content-Type: text/plain\r\n\r\n'
+                            b'Internal Server Error\n')
+    sys.stdout.buffer.flush()
+
+
 # Set the path to your application directory
 # Adjust this to match your actual directory structure
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -53,6 +61,7 @@ except ImportError as e:
     log_error("Full traceback:")
     log_error(traceback.format_exc())
     log_error("=" * 70)
+    emit_500()
     sys.exit(1)
 except Exception as e:
     # Catch any other initialization errors
@@ -65,6 +74,7 @@ except Exception as e:
     log_error("Full traceback:")
     log_error(traceback.format_exc())
     log_error("=" * 70)
+    emit_500()
     sys.exit(1)
 
 
@@ -157,10 +167,7 @@ def run_cgi():
         log_error("=" * 70)
         if not headers_sent:
             # Return a proper 500 rather than "End of script output before headers"
-            sys.stdout.buffer.write(b'Status: 500 Internal Server Error\r\n'
-                                    b'Content-Type: text/plain\r\n\r\n'
-                                    b'Internal Server Error\n')
-            sys.stdout.buffer.flush()
+            emit_500()
         sys.exit(1)
 
 

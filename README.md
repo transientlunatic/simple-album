@@ -107,6 +107,15 @@ For complete setup instructions, see [Automated Deployment Guide](.github/workfl
 8. **Update .htaccess** if needed:
    The included `.htaccess` should work out of the box with FastCGI. If using CGI, see step 6 for required changes.
 
+### Running the tests
+
+```bash
+pip install -r requirements.txt pytest
+python -m pytest
+```
+
+CI runs the same suite on Python 3.9–3.13 for every pull request, and the DreamHost deploy only runs after it passes.
+
 ### Local Development
 
 1. **Clone the repository**:

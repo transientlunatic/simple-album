@@ -16,7 +16,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  test:
+    name: Run tests
+    uses: ./.github/workflows/ci.yml
+
   deploy:
+    needs: test
     name: Deploy to DreamHost via SSH
     runs-on: ubuntu-latest
     
@@ -69,7 +74,8 @@ jobs:
             --exclude='.idea' \
             --exclude='config.local.ini' \
             --exclude='.gitignore' \
-            --exclude='test_server.py' \
+            --exclude='tests' \
+            --exclude='.pytest_cache' \
             --exclude='run_local.py' \
             ./ "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/"
       
@@ -123,17 +129,32 @@ jobs:
           
           cd "$REMOTE_PATH" || exit 1
           
-          # Create virtual environment if it doesn't exist
-          if [ ! -d "venv" ]; then
-            echo "Creating virtual environment..."
-            python3 -m venv venv || exit 1
+          # Repair a venv whose pip is missing or broken (e.g. created without pip)
+          if [ -d venv ] && ! venv/bin/python3 -m pip --version >/dev/null 2>&1; then
+            echo "Existing venv has no working pip; recreating..."
+            rm -rf venv
           fi
-          
-          # Activate virtual environment and install/update dependencies
-          source venv/bin/activate || exit 1
-          pip install --upgrade pip || exit 1
-          pip install -r requirements.txt || exit 1
-          
+
+          # Create virtual environment if it doesn't exist
+          if [ ! -d venv ]; then
+            echo "Creating virtual environment..."
+            if ! python3 -m venv venv; then
+              # ensurepip/python3-venv is often unavailable on shared hosting:
+              # create the venv without pip and bootstrap pip separately.
+              echo "venv with ensurepip failed; bootstrapping pip with get-pip.py..."
+              rm -rf venv
+              python3 -m venv --without-pip venv || exit 1
+              GET_PIP="$(mktemp)"
+              curl -fsSL https://bootstrap.pypa.io/get-pip.py -o "$GET_PIP" || exit 1
+              venv/bin/python3 "$GET_PIP" || exit 1
+              rm -f "$GET_PIP"
+            fi
+          fi
+
+          # Call pip via the venv's interpreter rather than relying on activation
+          venv/bin/python3 -m pip install --upgrade pip || exit 1
+          venv/bin/python3 -m pip install -r requirements.txt || exit 1
+
           echo "Dependencies installed/updated successfully"
           ENDSSH
       
