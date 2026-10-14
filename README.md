@@ -278,6 +278,17 @@ curl -X POST \
   -H "Content-Type: image/jpeg"
 ```
 
+**Troubleshooting uploads on shared hosting:**
+
+- `401 Invalid or missing API key` with a correct key usually means Apache dropped the
+  `Authorization` header. The bundled `.htaccess` forwards it with a `RewriteRule ... E=HTTP_AUTHORIZATION`;
+  make sure your deployed `.htaccess` includes that rule (a `?api_key=` request succeeding where the
+  header fails confirms the diagnosis).
+- A generic Apache `500 Internal Server Error` page (sometimes with a `418` status) for uploads usually
+  comes from ModSecurity, not the app. `curl --data-binary` sends `application/x-www-form-urlencoded`
+  unless you set a `Content-Type`, so the OWASP rules parse the image bytes as a form and block them.
+  Always send an explicit `Content-Type` (`image/jpeg`, `image/png` or `application/octet-stream`).
+
 **Response (Success - 201 Created):**
 ```json
 {
