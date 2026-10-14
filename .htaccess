@@ -5,6 +5,12 @@ AddHandler fcgid-script .fcgi
 RewriteEngine On
 RewriteBase /
 
+# Apache's FastCGI/CGI handlers drop the Authorization header by default, which
+# makes Bearer-token uploads fail with "Invalid or missing API key". Copy it into
+# the environment so the app sees it as HTTP_AUTHORIZATION. This rule must come
+# before the RewriteCond lines, which only apply to the rule that follows them.
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
 # Don't rewrite if the file actually exists (for static files like .fcgi)
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
